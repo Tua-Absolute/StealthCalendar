@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode */
+    --color-surface: #ffffff;
+    --color-surface-container: #f4f4f5;
+    --color-surface-elevated: #ffffff;
+    --color-border-default: #e4e4e7;
+    --color-foreground-emphasis: #18181b;
+    --color-foreground-default: #3f3f46;
+    --color-foreground-de-emphasis: #71717a;
+  }
+
+  .dark {
+    --color-surface: #000000;
+    --color-surface-container: #0d0d0e;
+    --color-surface-elevated: #18181a;
+    --color-border-default: #26262a;
+    --color-foreground-emphasis: #f4f4f5;
+    --color-foreground-default: #d4d4d8;
+    --color-foreground-de-emphasis: #a1a1aa;
+  }
+
+  body {
+    @apply bg-surface text-foreground-default antialiased;
+  }
+}
+
+@layer components {
+  .icon-button {
+    @apply p-2 rounded-lg transition-colors text-gray-400 hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground-emphasis;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-red-600 text-white hover:bg-red-500;
+  }
+  .btn-ghost {
+    @apply btn border border-border-default text-foreground-default hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground-emphasis;
+  }
+  .field {
+    @apply w-full rounded-xl border border-border-default bg-surface px-3 py-2 text-sm text-foreground-emphasis placeholder:text-foreground-de-emphasis focus:outline-none focus:ring-2 focus:ring-red-500/60;
+  }
+  .label {
+    @apply block text-xs font-medium text-foreground-de-emphasis mb-1;
+  }
+}
