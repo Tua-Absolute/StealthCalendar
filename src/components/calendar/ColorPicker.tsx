@@ -15,14 +15,14 @@ export function ColorPicker({ value, onChange, allowNone, noneColor }: {
         <button
           type="button"
           onClick={() => onChange(null)}
-          title="Use the calendar's color"
+          title="Use the category or calendar color"
           className={cn(
             'h-7 rounded-full border border-border-default px-2 text-[11px] text-foreground-de-emphasis',
             value === null && 'ring-2 ring-offset-2 ring-offset-surface-elevated ring-foreground-emphasis'
           )}
         >
           <span className="mr-1 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: noneColor }} />
-          Calendar
+          Default
         </button>
       )}
       {PALETTE.map((c) => (

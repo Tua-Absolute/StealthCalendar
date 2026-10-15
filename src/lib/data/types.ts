@@ -23,8 +23,18 @@ export interface EventRow {
   all_day: boolean;
   color: string | null;
   uid: string | null;
+  category_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CategoryRow {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string;
+  visible: boolean;
+  created_at: string;
 }
 
 /** Fields the app writes when creating or editing an event. */
@@ -38,6 +48,7 @@ export interface EventInput {
   end_at: string;
   all_day: boolean;
   color?: string | null;
+  category_id?: string | null;
 }
 
 export const PALETTE = [

@@ -17,7 +17,12 @@ A personal calendar manager and notifier in the Stealth black-and-red style.
 
 - Month, week and day views, with keyboard shortcuts: `t` today, `m` / `w` / `d` views, arrow keys to move, `n` new event.
 - Click any day or time slot to add an event; click an event to edit or delete it.
-- Multiple calendars, each with its own color, plus an optional color per event. Hide a calendar with its eye icon.
+- Multiple calendars, each with its own color. Hide a calendar with its eye icon.
+- Categories (like School or Work) color events across calendars. An event's own color wins, then its category's, then its calendar's.
+- Import `.ics` files and Google or Outlook `.csv` exports by dropping them anywhere on the page or with the Import button.
+  Repeating events are expanded from a year ago to two years ahead, time zones are converted to yours, and
+  re-importing a file updates the events it added instead of duplicating them.
+- Search event titles, locations and notes from the header (press `/`).
 
 ## Getting started
 
@@ -32,5 +37,5 @@ Set `ALLOWED_EMAILS` to your email to lock the app to your account.
 
 ## Database
 
-`calendars` and `events` live in Supabase. Every row belongs to a user and row-level security
+`calendars`, `categories` and `events` live in Supabase. Every row belongs to a user and row-level security
 means a signed-in user only ever sees their own rows. The schema is in `supabase/migrations/`.

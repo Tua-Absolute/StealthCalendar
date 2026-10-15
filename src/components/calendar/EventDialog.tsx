@@ -5,7 +5,7 @@ import { addDays, addHours, startOfDay } from 'date-fns';
 import { Trash2, X } from 'lucide-react';
 import { toDateInput, toLocalInput } from '@/lib/calendar/dates';
 import { useDeleteEvent, useSaveEvent } from '@/lib/data/hooks';
-import type { CalendarRow, EventRow } from '@/lib/data/types';
+import type { CalendarRow, CategoryRow, EventRow } from '@/lib/data/types';
 import { ColorPicker } from './ColorPicker';
 
 /** What the dialog opens with: an existing event, or a new one at a time. */
@@ -22,6 +22,7 @@ interface FormState {
   location: string;
   description: string;
   color: string | null;
+  categoryId: string;
 }
 
 function initialState(draft: Draft, calendars: CalendarRow[]): FormState {
@@ -39,6 +40,7 @@ function initialState(draft: Draft, calendars: CalendarRow[]): FormState {
       location: r.location ?? '',
       description: r.description ?? '',
       color: r.color,
+      categoryId: r.category_id ?? '',
     };
   }
   const { start, allDay } = draft;
@@ -51,6 +53,7 @@ function initialState(draft: Draft, calendars: CalendarRow[]): FormState {
     location: '',
     description: '',
     color: null,
+    categoryId: '',
   };
 }
 
@@ -60,9 +63,10 @@ function parseDateInput(value: string): Date {
   return new Date(y, m - 1, d);
 }
 
-export function EventDialog({ draft, calendars, onClose }: {
+export function EventDialog({ draft, calendars, categories, onClose }: {
   draft: Draft;
   calendars: CalendarRow[];
+  categories: CategoryRow[];
   onClose: () => void;
 }) {
   const [form, setForm] = useState(() => initialState(draft, calendars));
@@ -106,6 +110,7 @@ export function EventDialog({ draft, calendars, onClose }: {
         end_at: end.toISOString(),
         all_day: form.allDay,
         color: form.color,
+        category_id: form.categoryId || null,
       });
       onClose();
     } catch (err) {
@@ -123,7 +128,9 @@ export function EventDialog({ draft, calendars, onClose }: {
     }
   };
 
-  const calColor = calendars.find((c) => c.id === form.calendarId)?.color;
+  // With no color of its own, the event takes its category's color, then its calendar's.
+  const inheritedColor = categories.find((c) => c.id === form.categoryId)?.color
+    ?? calendars.find((c) => c.id === form.calendarId)?.color;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
@@ -166,16 +173,25 @@ export function EventDialog({ draft, calendars, onClose }: {
           </div>
         </div>
 
-        <div>
-          <label className="label">Calendar</label>
-          <select className="field" value={form.calendarId} onChange={(e) => set('calendarId', e.target.value)}>
-            {calendars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Calendar</label>
+            <select className="field" value={form.calendarId} onChange={(e) => set('calendarId', e.target.value)}>
+              {calendars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Category</label>
+            <select className="field" value={form.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
+              <option value="">None</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
         </div>
 
         <div>
           <label className="label">Color</label>
-          <ColorPicker value={form.color} onChange={(c) => set('color', c)} allowNone noneColor={calColor} />
+          <ColorPicker value={form.color} onChange={(c) => set('color', c)} allowNone noneColor={inheritedColor} />
         </div>
 
         <div>
