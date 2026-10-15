@@ -45,6 +45,10 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  if (!user && path.startsWith('/api/')) {
+    return NextResponse.json({ error: 'Sign in first.' }, { status: 401 });
+  }
+
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';

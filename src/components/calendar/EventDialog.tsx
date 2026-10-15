@@ -46,7 +46,7 @@ function initialState(draft: Draft, calendars: CalendarRow[]): FormState {
   const { start, allDay } = draft;
   return {
     title: '',
-    calendarId: calendars.find((c) => c.source === 'local')?.id ?? calendars[0]?.id ?? '',
+    calendarId: calendars.find((c) => c.source === 'local')?.id ?? calendars.find((c) => c.writable)?.id ?? '',
     allDay,
     start: allDay ? toDateInput(start) : toLocalInput(start),
     end: allDay ? toDateInput(start) : toLocalInput(addHours(start, 1)),
@@ -73,6 +73,9 @@ export function EventDialog({ draft, calendars, categories, onClose }: {
   const [error, setError] = useState<string | null>(null);
   const save = useSaveEvent();
   const remove = useDeleteEvent();
+  // Events in a read-only calendar (a shared or holiday calendar) can be viewed but not changed.
+  const readOnly = draft.kind === 'edit' && calendars.find((c) => c.id === draft.row.calendar_id)?.writable === false;
+  const choices = calendars.filter((c) => c.writable || c.id === form.calendarId);
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   useEffect(() => {
@@ -102,6 +105,7 @@ export function EventDialog({ draft, calendars, categories, onClose }: {
     try {
       await save.mutateAsync({
         id: draft.kind === 'edit' ? draft.row.id : undefined,
+        from_calendar_id: draft.kind === 'edit' ? draft.row.calendar_id : undefined,
         calendar_id: form.calendarId,
         title: form.title.trim() || '(No title)',
         description: form.description.trim() || null,
@@ -121,7 +125,7 @@ export function EventDialog({ draft, calendars, categories, onClose }: {
   const del = async () => {
     if (draft.kind !== 'edit') return;
     try {
-      await remove.mutateAsync(draft.row.id);
+      await remove.mutateAsync(draft.row);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete the event.');
@@ -141,7 +145,7 @@ export function EventDialog({ draft, calendars, categories, onClose }: {
       >
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-foreground-emphasis">
-            {draft.kind === 'edit' ? 'Edit event' : 'New event'}
+            {readOnly ? 'Event' : draft.kind === 'edit' ? 'Edit event' : 'New event'}
           </h2>
           <button type="button" onClick={onClose} className="icon-button" aria-label="Close"><X className="h-5 w-5" /></button>
         </div>
@@ -177,7 +181,7 @@ export function EventDialog({ draft, calendars, categories, onClose }: {
           <div>
             <label className="label">Calendar</label>
             <select className="field" value={form.calendarId} onChange={(e) => set('calendarId', e.target.value)}>
-              {calendars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
           <div>
@@ -205,17 +209,18 @@ export function EventDialog({ draft, calendars, categories, onClose }: {
             onChange={(e) => set('description', e.target.value)} />
         </div>
 
+        {readOnly && <p className="text-sm text-foreground-de-emphasis">This calendar is read-only, so this event can&apos;t be changed here.</p>}
         {error && <p className="text-sm text-red-400">{error}</p>}
 
         <div className="flex items-center justify-between pt-1">
-          {draft.kind === 'edit' ? (
+          {draft.kind === 'edit' && !readOnly ? (
             <button type="button" onClick={del} disabled={remove.isPending} className="btn text-red-400 hover:bg-red-500/10">
               <Trash2 className="h-4 w-4" /> Delete
             </button>
           ) : <span />}
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="btn-ghost">Cancel</button>
-            <button type="submit" disabled={save.isPending} className="btn-primary">
+            <button type="submit" disabled={save.isPending || readOnly} className="btn-primary">
               {save.isPending ? 'Saving…' : 'Save'}
             </button>
           </div>

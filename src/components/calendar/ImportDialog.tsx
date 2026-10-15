@@ -22,7 +22,9 @@ export function ImportDialog({ parsed, calendars, onClose, onDone }: {
   const [mode, setMode] = useState<'new' | 'existing'>('new');
   const [name, setName] = useState(() => suggestedName(parsed));
   const [color, setColor] = useState<string>(PALETTE[(calendars.length + 5) % PALETTE.length]);
-  const [calendarId, setCalendarId] = useState(calendars[0]?.id ?? '');
+  // Imports stay in StealthCalendar; they are never pushed into Google or Outlook calendars.
+  const targets = calendars.filter((c) => !c.account_id);
+  const [calendarId, setCalendarId] = useState(targets[0]?.id ?? '');
   const [result, setResult] = useState<ImportResult | null>(null);
   const importEvents = useImportEvents();
   const { events } = parsed;
@@ -112,7 +114,7 @@ export function ImportDialog({ parsed, calendars, onClose, onDone }: {
               {mode === 'existing' && (
                 <div className="pl-6">
                   <select className="field" value={calendarId} onChange={(e) => setCalendarId(e.target.value)}>
-                    {calendars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {targets.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                   <p className="mt-1 text-xs text-foreground-de-emphasis">Events already imported from this file are updated, not duplicated.</p>
                 </div>

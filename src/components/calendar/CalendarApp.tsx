@@ -5,11 +5,12 @@ import { ChevronLeft, ChevronRight, FileUp, ListFilter, Plus } from 'lucide-reac
 import { setHours, startOfHour, addHours } from 'date-fns';
 import { Header } from '@/components/layout/Header';
 import { getRange, rangeTitle, shiftCursor, type View } from '@/lib/calendar/dates';
-import { useCalendarItems, type CalendarItem } from '@/lib/data/hooks';
+import { useAutoSync, useCalendarItems, type CalendarItem } from '@/lib/data/hooks';
 import type { EventRow } from '@/lib/data/types';
 import { ACCEPTED, canImport, parseFile, type ParsedFile } from '@/lib/import';
 import { useViewStore } from '@/store/view';
 import { cn } from '@/lib/utils';
+import { AccountsPanel } from './AccountsPanel';
 import { CalendarList } from './CalendarList';
 import { CategoryList } from './CategoryList';
 import { ImportDialog } from './ImportDialog';
@@ -30,6 +31,19 @@ export function CalendarApp() {
   const [importError, setImportError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const hasRemote = !!calendars.data?.some((c) => c.account_id);
+  const sync = useAutoSync(hasRemote);
+
+  // Messages from the Google / Outlook sign-in redirect.
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const connected = q.get('connected');
+    const failed = q.get('connect_error');
+    if (connected) setNotice({ tone: 'ok', text: `${connected === 'google' ? 'Google Calendar' : 'Outlook'} is connected. Your main calendar is showing; switch on others with their eye icons.` });
+    if (failed) setNotice({ tone: 'error', text: failed });
+    if (connected || failed) window.history.replaceState(null, '', '/');
+  }, []);
 
   const readFiles = async (files: File[]) => {
     setImportError(null);
@@ -130,8 +144,9 @@ export function CalendarApp() {
           >
             <Plus className="h-4 w-4" /> New event
           </button>
-          {calendars.data && <CalendarList calendars={calendars.data} />}
+          {calendars.data && <CalendarList calendars={calendars.data} onShowRemote={() => sync.mutate()} />}
           {categories.data && <CategoryList categories={categories.data} />}
+          {calendars.data && <AccountsPanel calendars={calendars.data} sync={sync} />}
           <div>
             <button type="button" onClick={() => fileInput.current?.click()} className="btn-ghost w-full">
               <FileUp className="h-4 w-4" /> Import .ics or .csv
@@ -178,6 +193,16 @@ export function CalendarApp() {
               ))}
             </div>
           </div>
+
+          {notice && (
+            <p className={cn(
+              'flex items-start justify-between gap-3 rounded-xl border px-3 py-2 text-sm',
+              notice.tone === 'ok' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'
+            )}>
+              {notice.text}
+              <button type="button" onClick={() => setNotice(null)} className="opacity-80 hover:opacity-100">Dismiss</button>
+            </p>
+          )}
 
           {importError && (
             <p className="flex items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">

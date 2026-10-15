@@ -5,8 +5,13 @@ import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { useDeleteCalendar, useSaveCalendar } from '@/lib/data/hooks';
 import { PALETTE, type CalendarRow } from '@/lib/data/types';
 import { ColorPicker } from './ColorPicker';
+import { ProviderMark } from './AccountsPanel';
 
-export function CalendarList({ calendars }: { calendars: CalendarRow[] }) {
+export function CalendarList({ calendars, onShowRemote }: {
+  calendars: CalendarRow[];
+  /** Called when a Google or Outlook calendar is switched on, so its events can be fetched. */
+  onShowRemote?: () => void;
+}) {
   const save = useSaveCalendar();
   const remove = useDeleteCalendar();
   const [editing, setEditing] = useState<string | null>(null);
@@ -21,7 +26,7 @@ export function CalendarList({ calendars }: { calendars: CalendarRow[] }) {
   };
 
   const del = (cal: CalendarRow) => {
-    if (calendars.length <= 1) return;
+    if (calendars.filter((c) => !c.account_id).length <= 1 && !cal.account_id) return;
     if (window.confirm(`Delete "${cal.name}" and all of its events?`)) remove.mutate(cal.id);
   };
 
@@ -39,14 +44,18 @@ export function CalendarList({ calendars }: { calendars: CalendarRow[] }) {
                 style={{ backgroundColor: cal.visible ? cal.color : 'transparent', border: `2px solid ${cal.color}` }}
                 aria-label={`Change ${cal.name} color`}
               />
-              <span className={`flex-1 truncate text-sm ${cal.visible ? 'text-foreground-emphasis' : 'text-foreground-de-emphasis line-through'}`}>
+              {cal.account_id && (cal.source === 'google' || cal.source === 'outlook') && <ProviderMark provider={cal.source} />}
+              <span title={cal.sync_error ?? cal.name} className={`flex-1 truncate text-sm ${cal.visible ? 'text-foreground-emphasis' : 'text-foreground-de-emphasis line-through'}`}>
                 {cal.name}
               </span>
-              <button type="button" onClick={() => save.mutate({ id: cal.id, visible: !cal.visible })}
+              <button type="button" onClick={() => save.mutate(
+                  { id: cal.id, visible: !cal.visible },
+                  { onSuccess: () => { if (!cal.visible && cal.account_id) onShowRemote?.(); } }
+                )}
                 className="text-foreground-de-emphasis hover:text-foreground-emphasis" aria-label={cal.visible ? 'Hide' : 'Show'}>
                 {cal.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </button>
-              {calendars.length > 1 && (
+              {!cal.account_id && calendars.filter((c) => !c.account_id).length > 1 && (
                 <button type="button" onClick={() => del(cal)}
                   className="hidden group-hover:block text-foreground-de-emphasis hover:text-red-400" aria-label="Delete calendar">
                   <Trash2 className="h-4 w-4" />
