@@ -1,17 +1,18 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import type { Range } from '@/lib/calendar/dates';
 import type { ImportedEvent } from '@/lib/import';
-import { PALETTE, type CalendarRow, type CategoryRow, type EventInput, type EventRow } from './types';
+import { PALETTE, isRemote, type AccountRow, type CalendarRow, type CategoryRow, type EventInput, type EventRow } from './types';
 
 const supabase = createClient();
 
 export const keys = {
   calendars: ['calendars'] as const,
   categories: ['categories'] as const,
+  accounts: ['accounts'] as const,
   events: (range: Range) => ['events', range.start.toISOString(), range.end.toISOString()] as const,
 };
 
@@ -50,10 +51,31 @@ export function useEvents(range: Range) {
   });
 }
 
+const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+async function api(method: string, url: string, body?: unknown) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status}).`);
+  return data;
+}
+
 export function useSaveEvent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...fields }: EventInput) => {
+    /** `from_calendar_id` is the event's calendar before this edit, so moves out of Google or Outlook are handled. */
+    mutationFn: async ({ from_calendar_id, ...input }: EventInput & { from_calendar_id?: string }) => {
+      const cals = qc.getQueryData<CalendarRow[]>(keys.calendars) ?? [];
+      const touchesRemote = [input.calendar_id, from_calendar_id].some((id) => isRemote(cals.find((c) => c.id === id)));
+      if (touchesRemote) {
+        await api(input.id ? 'PATCH' : 'POST', '/api/events', { ...input, tz: timeZone() });
+        return;
+      }
+      const { id, ...fields } = input;
       const query = id
         ? supabase.from('events').update(fields).eq('id', id)
         : supabase.from('events').insert(fields);
@@ -67,12 +89,92 @@ export function useSaveEvent() {
 export function useDeleteEvent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('events').delete().eq('id', id);
+    mutationFn: async (row: Pick<EventRow, 'id' | 'calendar_id'>) => {
+      const cals = qc.getQueryData<CalendarRow[]>(keys.calendars) ?? [];
+      if (isRemote(cals.find((c) => c.id === row.calendar_id))) {
+        await api('DELETE', `/api/events?id=${encodeURIComponent(row.id)}`);
+        return;
+      }
+      const { error } = await supabase.from('events').delete().eq('id', row.id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['events'] }),
   });
+}
+
+export function useAccounts() {
+  return useQuery({
+    queryKey: keys.accounts,
+    queryFn: async (): Promise<AccountRow[]> => {
+      const { data, error } = await supabase.from('accounts').select('id, provider, email, created_at').order('created_at');
+      if (error) throw error;
+      return data as AccountRow[];
+    },
+  });
+}
+
+export function useDisconnectAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    // Deleting the account removes its calendars, their events and its saved sign-in.
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('accounts').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.accounts });
+      qc.invalidateQueries({ queryKey: keys.calendars });
+      qc.invalidateQueries({ queryKey: ['events'] });
+    },
+  });
+}
+
+export interface SyncSummary {
+  calendars: number;
+  events: number;
+  removed: number;
+  errors: string[];
+}
+
+export function useSyncNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: ['sync'],
+    mutationFn: (): Promise<SyncSummary> => api('POST', '/api/sync', { tz: timeZone() }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: keys.calendars });
+      qc.invalidateQueries({ queryKey: ['events'] });
+    },
+  });
+}
+
+const AUTO_SYNC_MS = 5 * 60 * 1000;
+
+/** While the app is open: sync on load, every five minutes, and when the tab comes back into view. */
+export function useAutoSync(enabled: boolean) {
+  const sync = useSyncNow();
+  const last = useRef(0);
+  const run = useRef(sync.mutate);
+  run.current = sync.mutate;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const maybeSync = (minGap: number) => {
+      if (Date.now() - last.current < minGap) return;
+      last.current = Date.now();
+      run.current();
+    };
+    maybeSync(0);
+    const timer = setInterval(() => maybeSync(AUTO_SYNC_MS - 1000), AUTO_SYNC_MS);
+    const onVisible = () => document.visibilityState === 'visible' && maybeSync(60_000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [enabled]);
+
+  return sync;
 }
 
 export function useSaveCalendar() {

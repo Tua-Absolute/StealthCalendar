@@ -9,7 +9,22 @@ export interface CalendarRow {
   external_id: string | null;
   visible: boolean;
   created_at: string;
+  /** Set for calendars that come from a connected Google or Outlook account. */
+  account_id: string | null;
+  writable: boolean;
+  last_synced_at: string | null;
+  sync_error: string | null;
 }
+
+export interface AccountRow {
+  id: string;
+  provider: 'google' | 'outlook';
+  email: string;
+  created_at: string;
+}
+
+export const isRemote = (cal: Pick<CalendarRow, 'source'> | undefined) =>
+  cal?.source === 'google' || cal?.source === 'outlook';
 
 export interface EventRow {
   id: string;
