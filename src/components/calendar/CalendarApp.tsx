@@ -1,14 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, ListFilter, Plus } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, FileUp, ListFilter, Plus } from 'lucide-react';
 import { setHours, startOfHour, addHours } from 'date-fns';
 import { Header } from '@/components/layout/Header';
 import { getRange, rangeTitle, shiftCursor, type View } from '@/lib/calendar/dates';
 import { useCalendarItems, type CalendarItem } from '@/lib/data/hooks';
+import type { EventRow } from '@/lib/data/types';
+import { ACCEPTED, canImport, parseFile, type ParsedFile } from '@/lib/import';
 import { useViewStore } from '@/store/view';
 import { cn } from '@/lib/utils';
 import { CalendarList } from './CalendarList';
+import { CategoryList } from './CategoryList';
+import { ImportDialog } from './ImportDialog';
+import { SearchBox } from './SearchBox';
 import { EventDialog, type Draft } from './EventDialog';
 import { MonthView } from './MonthView';
 import { TimeGridView } from './TimeGridView';
@@ -20,7 +25,62 @@ export function CalendarApp() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showCalendars, setShowCalendars] = useState(false);
   const range = useMemo(() => getRange(view, cursor), [view, cursor]);
-  const { items, calendars, events } = useCalendarItems(range);
+  const { items, calendars, categories, events } = useCalendarItems(range);
+  const [imports, setImports] = useState<ParsedFile[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const readFiles = async (files: File[]) => {
+    setImportError(null);
+    const errors: string[] = [];
+    const parsed: ParsedFile[] = [];
+    for (const file of files) {
+      if (!canImport(file)) {
+        errors.push(`${file.name} isn't a calendar file. Drop .ics or .csv files.`);
+        continue;
+      }
+      try {
+        parsed.push(await parseFile(file));
+      } catch (err) {
+        errors.push(`Couldn't read ${file.name}: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
+    }
+    if (errors.length) setImportError(errors.join(' '));
+    if (parsed.length) setImports((q) => [...q, ...parsed]);
+  };
+
+  // Drop files anywhere on the page to import them.
+  useEffect(() => {
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+    const onEnter = (e: DragEvent) => { if (hasFiles(e)) { depth++; setDragging(true); } };
+    const onLeave = (e: DragEvent) => { if (hasFiles(e) && --depth <= 0) { depth = 0; setDragging(false); } };
+    const onOver = (e: DragEvent) => { if (hasFiles(e)) e.preventDefault(); };
+    const onDrop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      readFiles(Array.from(e.dataTransfer?.files ?? []));
+    };
+    window.addEventListener('dragenter', onEnter);
+    window.addEventListener('dragleave', onLeave);
+    window.addEventListener('dragover', onOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragenter', onEnter);
+      window.removeEventListener('dragleave', onLeave);
+      window.removeEventListener('dragover', onOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, []);
+
+  const openFromSearch = (row: EventRow) => {
+    setCursor(new Date(row.start_at));
+    setView('day');
+    setDraft({ kind: 'edit', row });
+  };
 
   const openDay = (day: Date) => { setCursor(day); setView('day'); };
   const select = (item: CalendarItem) => setDraft({ kind: 'edit', row: item.row });
@@ -29,7 +89,7 @@ export function CalendarApp() {
   // Keyboard shortcuts, like Google Calendar: t, m, w, d, arrows, n.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (draft || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (draft || imports.length || e.metaKey || e.ctrlKey || e.altKey) return;
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       const map: Record<string, () => void> = {
@@ -45,13 +105,14 @@ export function CalendarApp() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [draft, view, cursor, setCursor, setView]);
+  }, [draft, imports.length, view, cursor, setCursor, setView]);
 
-  const error = calendars.error ?? events.error;
+  const error = calendars.error ?? events.error ?? categories.error;
 
   return (
     <div className="flex h-[100dvh] flex-col">
       <Header>
+        <SearchBox onPick={openFromSearch} />
         <button type="button" onClick={() => setShowCalendars((s) => !s)} className="icon-button lg:hidden" aria-label="Calendars">
           <ListFilter className="h-5 w-5" />
         </button>
@@ -70,6 +131,21 @@ export function CalendarApp() {
             <Plus className="h-4 w-4" /> New event
           </button>
           {calendars.data && <CalendarList calendars={calendars.data} />}
+          {categories.data && <CategoryList categories={categories.data} />}
+          <div>
+            <button type="button" onClick={() => fileInput.current?.click()} className="btn-ghost w-full">
+              <FileUp className="h-4 w-4" /> Import .ics or .csv
+            </button>
+            <p className="mt-2 px-1 text-xs text-foreground-de-emphasis">Or drop calendar files anywhere on the page.</p>
+            <input
+              ref={fileInput}
+              type="file"
+              accept={ACCEPTED}
+              multiple
+              className="hidden"
+              onChange={(e) => { readFiles(Array.from(e.target.files ?? [])); e.target.value = ''; }}
+            />
+          </div>
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col p-3 sm:p-4 gap-3">
@@ -103,6 +179,13 @@ export function CalendarApp() {
             </div>
           </div>
 
+          {importError && (
+            <p className="flex items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+              {importError}
+              <button type="button" onClick={() => setImportError(null)} className="text-amber-300/80 hover:text-amber-200">Dismiss</button>
+            </p>
+          )}
+
           {error && (
             <p className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
               Could not load your calendar: {error.message}
@@ -130,7 +213,30 @@ export function CalendarApp() {
       </button>
 
       {draft && calendars.data && (
-        <EventDialog draft={draft} calendars={calendars.data} onClose={() => setDraft(null)} />
+        <EventDialog draft={draft} calendars={calendars.data} categories={categories.data ?? []} onClose={() => setDraft(null)} />
+      )}
+
+      {imports[0] && calendars.data && (
+        <ImportDialog
+          key={imports[0].fileName + imports.length}
+          parsed={imports[0]}
+          calendars={calendars.data}
+          onClose={() => setImports((q) => q.slice(1))}
+          onDone={(start) => {
+            if (start) { setCursor(start); setView('month'); }
+            setImports((q) => q.slice(1));
+          }}
+        />
+      )}
+
+      {dragging && (
+        <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="rounded-2xl border-2 border-dashed border-red-500 bg-surface-elevated/80 px-10 py-8 text-center">
+            <FileUp className="mx-auto h-10 w-10 text-red-500" />
+            <p className="mt-3 text-lg font-semibold text-foreground-emphasis">Drop to import</p>
+            <p className="text-sm text-foreground-de-emphasis">.ics calendar files or .csv exports</p>
+          </div>
+        </div>
       )}
     </div>
   );
